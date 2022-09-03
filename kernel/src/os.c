@@ -56,6 +56,7 @@ static void os_run()
 	assert(*add3_int==543210);
 	assert(*(add3_int+(512-4)/4)==114514);
 	pmm->free(add3);
+	while(true);
 }
 
 MODULE_DEF(os) = {
