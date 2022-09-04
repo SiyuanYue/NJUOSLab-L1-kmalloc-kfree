@@ -331,7 +331,6 @@ static void kfree(void *ptr)
 			break;
 		}
 	}
-	printf("%d\n",(int)flag);
 	//---
 	if (ph)
 	{
