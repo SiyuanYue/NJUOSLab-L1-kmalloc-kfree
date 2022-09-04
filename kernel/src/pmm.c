@@ -105,9 +105,9 @@ void allockpage(pageheader_t **pagehead) // page = 64KiB
 				assert(oldfreenode == head);
 				head = head->next;
 			}
-			*pagehead = (void *)oldfreenode;
 			memset(oldfreenode, 0, sizeof(freenode_t));
 			unlock(&heap_lock);
+			*pagehead = (void *)oldfreenode;
 			return;
 		}
 		else
@@ -125,9 +125,10 @@ void allockpage(pageheader_t **pagehead) // page = 64KiB
 				assert(prenode->next == oldfreenode);
 				prenode->next = freenode;
 			}
-			*pagehead = (void *)oldfreenode;
+		
 			memset(oldfreenode, 0, sizeof(freenode_t));
 			unlock(&heap_lock);
+			*pagehead = (void *)oldfreenode;
 			return;
 		}
 	}
@@ -159,9 +160,9 @@ static void *kallocHugeMemory(size_t size)
 		void *ret = (void *)highnode + highnode->size - size; // BUG 这里没有转成void *!!!
 		header_t *header = ret - sizeof(header_t);
 		highnode->size = (uintptr_t)header - (uintptr_t)highnode; // BUG 减反了
-		unlock(&heap_lock);
 		header->size = size;
 		header->magic = 7654321;
+		unlock(&heap_lock);
 		return ret;
 	}
 	else
@@ -196,13 +197,12 @@ static void *kalloc(size_t size)
 		}
 		size = powval;
 	}
-#ifndef TEST
 	int cpuno = cpu_current();
 	assert(cpuno <= cpu_count());
 	if (cpupagelist[cpuno].pagehead == NULL) // cpu first alloc
 	{
-		allockpage(&cpupagelist[cpuno].pagehead); // lock and alloc a 64Kib page
 		lock(&cpupagelist[cpuno].lock);
+		allockpage(&cpupagelist[cpuno].pagehead); // lock and alloc a 64Kib page
 		assert(cpupagelist[cpuno].pagehead != NULL);
 		cpupagelist[cpuno].pagehead->next = NULL;
 		cpupagelist[cpuno].pagehead->size = size;
@@ -214,6 +214,7 @@ static void *kalloc(size_t size)
 		pageFreend->size = 64 * 1024 - size;
 		unlock(&cpupagelist[cpuno].lock);
 	}
+	lock(&cpupagelist[cpuno].lock);
 	pageheader_t *ph = cpupagelist[cpuno].pagehead;
 	while (ph)
 	{
@@ -254,16 +255,18 @@ static void *kalloc(size_t size)
 				assert((uintptr_t)ph + ph->pagefreehead_index * size == (uintptr_t)newnode);
 				assert(ph->pagefreehead_index < 64 * 1024 / size);
 			}
+			unlock(&cpupagelist[cpuno].lock);
 			memset(fd, 0, size);
 			return fd;
 		}
 		else
 		{
-			panic_on(true, "not do");
+			unlock(&cpupagelist[cpuno].lock);
+			panic_on(true, "can reach here");
 			return fd;
 		}
 	}
-	else //这种大小的页还没有 slowpath
+	else //这种大小的can alloc的页还没有 slowpath
 	{
 		pageheader_t *pagehead = cpupagelist[cpuno].pagehead;
 		while (pagehead)
@@ -280,15 +283,14 @@ static void *kalloc(size_t size)
 			allockpage(&pagehead);
 			if (pagehead) // insert page
 			{
-				lock(&cpupagelist[cpuno].lock);
 				pagehead->next = cpupagelist[cpuno].pagehead;
 				pagehead->size = size;
 				pagehead->pagefreehead_index = 1;
 				cpupagelist[cpuno].pagehead = pagehead;
-				unlock(&cpupagelist[cpuno].lock);
 			}
-			else
+			else //no memory
 			{
+				unlock(&cpupagelist[cpuno].lock);
 				return NULL;
 			}
 		}
@@ -300,15 +302,13 @@ static void *kalloc(size_t size)
 		newnode->size = 64 * 1024 - pagehead->pagefreehead_index * size;
 		assert((uintptr_t)pagehead + pagehead->pagefreehead_index * size == (uintptr_t)newnode);
 		memset(ret, 0, size);
+		unlock(&cpupagelist[cpuno].lock);
 		return ret;
 	}
-#endif
-	return NULL;
 }
 
 static void kfree(void *ptr)
 {
-#ifndef TEST
 	assert(ptr != NULL);
 	lock(&cpupagelist[cpu_current()].lock);
 	pageheader_t *ph = cpupagelist[cpu_current()].pagehead;
@@ -450,7 +450,7 @@ static void kfree(void *ptr)
 			}
 		}
 		else if (ptr + size == (void *)after)
-		{ // after can merge
+		{ 
 			freenode->size = size + after->size;
 			freenode->next = head;
 			head = freenode;
@@ -465,7 +465,6 @@ static void kfree(void *ptr)
 		}
 		else
 		{
-			// printf("%x %x %x\n",head,heap_end,freenode);
 			freenode->size = size;
 			freenode->next = head;
 			head = freenode;
@@ -473,10 +472,8 @@ static void kfree(void *ptr)
 		unlock(&heap_lock);
 		return;
 	}
-#endif
 }
 
-#ifndef TEST
 // 框架代码中的 pmm_init (在 AbstractMachine 中运行)
 static void pmm_init()
 {
@@ -494,39 +491,6 @@ static void pmm_init()
 	}
 	lockinit(&heap_lock);
 }
-#else
-// 测试代码的 pmm_init ()
-#define HEAP_SIZE 16 * 1024 * 1024
-typedef struct
-{
-	void *start, *end;
-} area;
-area heap;
-static void pmm_init()
-{
-	char *ptr = malloc(HEAP_SIZE);
-	heap.start = ptr;
-	heap.end = ptr + HEAP_SIZE;
-	heap.end = (void *)((((uintptr_t)heap.end / 4096) - 1) * 4096);
-	printf("Got %d MiB heap: [%p, %p)\n", HEAP_SIZE >> 20, heap.start, heap.end);
-	head = heap.start;
-	head_page = (void *)((uintptr_t)heap.end - 4096 * 1024);
-	page_store = head_page;
-	assert(head != NULL);
-	head->size = (void *)head_page - heap.start - sizeof(freenode_t);
-	head->next = NULL;
-	head_page->next = NULL;
-	head_page->magic = 234567;
-	head_page->size = (uintptr_t)heap.end - (uintptr_t)head_page;
-	assert(((uintptr_t)head_page) % 4096 == 0);
-	// LOCK INIT
-	lockinit(&heap_lock);
-	lockinit(&page_lock);
-	th_alloclist.thread_count = 0;
-
-	printf("sizeof(thread_alloc_LIST) %d   tid:%d\n", (int)sizeof(thread_alloc_list_t), gettid());
-}
-#endif
 
 MODULE_DEF(pmm) = {
 	.init = pmm_init,
