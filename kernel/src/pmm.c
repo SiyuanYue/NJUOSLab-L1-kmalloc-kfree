@@ -54,7 +54,7 @@ pid_t gettid()
 #endif
 typedef struct pagelist_t //每个CPU或线程各有一个的Pagelist，串起来的页列表
 {
-	pageheader_t *pagehead;//这个CPU的所属page链表
+	pageheader_t *pagehead; //这个CPU的所属page链表
 	lock_t lock;
 } pagelist_t;
 typedef struct thread_alloc_list_t
@@ -125,7 +125,7 @@ void allockpage(pageheader_t **pagehead) // page = 64KiB
 				assert(prenode->next == oldfreenode);
 				prenode->next = freenode;
 			}
-		
+
 			memset(oldfreenode, 0, sizeof(freenode_t));
 			unlock(&heap_lock);
 			*pagehead = (void *)oldfreenode;
@@ -177,7 +177,7 @@ static void *kalloc(size_t size)
 		size = 32;
 	else if (size > 16 * 1024) // when size >16KB  slowpath
 	{
-		if(size >16*1024*1024)
+		if (size > 16 * 1024 * 1024)
 			return NULL;
 		size_t powval = 32;
 		while (powval < size) // address is n times powval
@@ -218,8 +218,8 @@ static void *kalloc(size_t size)
 	pageheader_t *ph = cpupagelist[cpuno].pagehead;
 	while (ph)
 	{
-		if (ph->size == size && ph->pagefreehead_index > 0)//ph->pagefreehead_index == 0时这页已满
- 		{
+		if (ph->size == size && ph->pagefreehead_index > 0) // ph->pagefreehead_index == 0时这页已满
+		{
 			break;
 		}
 		ph = ph->next;
@@ -234,7 +234,7 @@ static void *kalloc(size_t size)
 			if (fd->size == 0) // free过的一块 or last kuai
 			{
 				assert(fd->magic == 1234567);
-				if (fd->next == NULL) //after this alloc, this page is full
+				if (fd->next == NULL) // after this alloc, this page is full
 				{
 					ph->pagefreehead_index = 0;
 				}
@@ -288,7 +288,7 @@ static void *kalloc(size_t size)
 				pagehead->pagefreehead_index = 1;
 				cpupagelist[cpuno].pagehead = pagehead;
 			}
-			else //no memory
+			else // no memory
 			{
 				unlock(&cpupagelist[cpuno].lock);
 				return NULL;
@@ -298,7 +298,7 @@ static void *kalloc(size_t size)
 		pagefreenode_t *newnode = ret + size;
 		newnode->magic = 1234567;
 		newnode->next = NULL;
-		pagehead->pagefreehead_index ++;
+		pagehead->pagefreehead_index++;
 		newnode->size = 64 * 1024 - pagehead->pagefreehead_index * size;
 		assert((uintptr_t)pagehead + pagehead->pagefreehead_index * size == (uintptr_t)newnode);
 		memset(ret, 0, size);
@@ -311,15 +311,31 @@ static void kfree(void *ptr)
 {
 	assert(ptr != NULL);
 	lock(&cpupagelist[cpu_current()].lock);
-	pageheader_t *ph = cpupagelist[cpu_current()].pagehead;
-	while (ph)
+	//---
+	pageheader_t *ph = NULL;
+	bool flag=false;
+	for (size_t i = 0; i < cpu_count(); i++)
 	{
-		if ((uintptr_t)ph < (uintptr_t)ptr && (uintptr_t)ptr < (uintptr_t)ph + 64 * 1024)
+		ph = cpupagelist[i].pagehead;
+		while (ph)
+		{
+			if ((uintptr_t)ph < (uintptr_t)ptr && (uintptr_t)ptr < (uintptr_t)ph + 64 * 1024)
+			{
+				flag=true;
+				break;
+			}
+			ph = ph->next;
+		}
+		if(flag==true)
+		{
 			break;
-		ph = ph->next;
+		}
 	}
+	printf("%d\n",(int)flag);
+	//---
 	if (ph)
 	{
+		assert(flag==true);
 		memset(ptr, 0, ph->size);
 		pagefreenode_t *after = NULL;
 		pagefreenode_t *before = NULL;
@@ -450,7 +466,7 @@ static void kfree(void *ptr)
 			}
 		}
 		else if (ptr + size == (void *)after)
-		{ 
+		{
 			freenode->size = size + after->size;
 			freenode->next = head;
 			head = freenode;
