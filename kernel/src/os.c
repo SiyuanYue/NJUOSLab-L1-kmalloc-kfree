@@ -113,10 +113,7 @@ static void os_run()
 	os_run_test2();
 	os_run_test3();
 #endif
-	printf("%x\n",pmm->alloc(8192));
-	printf("%x\n",pmm->alloc(8192));
-	printf("%x\n",pmm->alloc(8192));
-	printf("%x\n",pmm->alloc(8192));
+	printf("%x\n",pmm->alloc(5000));
 	printf("%x\n",pmm->alloc(4096));
 
 	while(true);
