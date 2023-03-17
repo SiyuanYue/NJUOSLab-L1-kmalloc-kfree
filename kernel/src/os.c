@@ -3,6 +3,8 @@ static void os_init()
 {
 	pmm->init();
 }
+// #define TEST
+#ifdef TEST
 static void os_run_test3()//大内存
 {
 	void *add;
@@ -99,20 +101,18 @@ static void os_run_test2()
 	assert(*(add3_int+(800-4)/4)==114514);
 	pmm->free(add3);
 }
+#endif
 static void os_run()
 {
 	for (const char *s = "Hello World from CPU #*\n"; *s; s++)
 	{
-#ifndef TEST
 		putch(*s == '*' ? '0' + cpu_current() : *s);
-#else
-		static size_t cpucnt = 0;
-		putchar(*s == '*' ? '0' + cpucnt++ : *s);
-#endif
 	}
+#ifdef TEST
 	os_run_test1();
 	os_run_test2();
 	os_run_test3();
+#endif
 	printf("%x\n",pmm->alloc(4096));
 	while(true);
 }
