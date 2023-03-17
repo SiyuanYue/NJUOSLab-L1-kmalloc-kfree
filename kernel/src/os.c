@@ -114,6 +114,8 @@ static void os_run()
 	os_run_test3();
 #endif
 	printf("%x\n",pmm->alloc(4096));
+	printf("%x\n",pmm->alloc(4096));
+
 	while(true);
 }
 
