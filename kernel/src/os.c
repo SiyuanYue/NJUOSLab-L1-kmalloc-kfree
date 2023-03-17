@@ -53,7 +53,7 @@ static void os_run_test1()
 		assert(*(add1_int+(24-4)/4)=114514);
 		pmm->free(add1[i]);
 		pmm->free(add2[i]);
-	}	
+	}
 }
 static void os_run_test2()
 {
@@ -77,7 +77,7 @@ static void os_run_test2()
 	}
 	else
 		printf("add2: %x\n", add2);
-	
+
 	void *add3 = pmm->alloc(800);
 	if (add3 == NULL)
 	{
@@ -113,6 +113,7 @@ static void os_run()
 	os_run_test1();
 	os_run_test2();
 	os_run_test3();
+	printf("%x\n",pmm->alloc(4096));
 	while(true);
 }
 
